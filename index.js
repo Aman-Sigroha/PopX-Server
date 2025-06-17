@@ -5,6 +5,8 @@ const bcrypt = require('bcrypt');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require("express-rate-limit");
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -32,10 +34,23 @@ pool.connect((err, client, release) => {
   });
 });
 
+// Multer Storage Configuration
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // Store uploaded files in the 'uploads' directory
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Unique filename
+  },
+});
+
+const upload = multer({ storage: storage });
+
 // Security Middleware
 app.use(express.json()); // Body parser
 app.use(cors()); // Enable CORS for all routes
 app.use(helmet()); // Set various HTTP headers for security
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Serve static files from 'uploads' directory
 
 // Rate limiting to prevent brute-force attacks
 const limiter = rateLimit({
@@ -99,9 +114,42 @@ app.post('/login', async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    res.status(200).json({ message: 'Logged in successfully', user: { id: user.id, email: user.email, fullname: user.fullname } });
+    res.status(200).json({ message: 'Logged in successfully', user: { id: user.id, email: user.email, fullname: user.fullname, profile_image_url: user.profile_image_url } });
   } catch (error) {
     next(error); // Pass error to general error handler
+  }
+});
+
+// Profile Picture Upload Route
+app.post('/upload-profile-picture', upload.single('profile_picture'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    // Assuming user ID is sent in the request body or can be derived from authentication
+    // For now, let's assume a user_id is sent in the body. In a real app, you'd get this from a JWT or session.
+    const { userId } = req.body; 
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const profileImageUrl = `/uploads/${req.file.filename}`;
+
+    // Update user's profile_image_url in the database
+    const result = await pool.query(
+      'UPDATE users SET profile_image_url = $1 WHERE id = $2 RETURNING *;',
+      [profileImageUrl, userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.status(200).json({ message: 'Profile picture uploaded successfully', profileImageUrl: profileImageUrl });
+  } catch (error) {
+    next(error);
   }
 });
 
