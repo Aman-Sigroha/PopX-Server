@@ -159,6 +159,19 @@ app.get('/profile-picture/:userId', async (req, res, next) => {
   }
 });
 
+// Test Database Connection Route
+app.get('/test-db', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query('SELECT NOW()');
+    client.release();
+    res.status(200).json({ message: 'Database connected successfully', currentTime: result.rows[0].now });
+  } catch (error) {
+    console.error('Error testing database connection:', error);
+    res.status(500).json({ message: 'Database connection failed', error: error.message });
+  }
+});
+
 // General Error Handling Middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
